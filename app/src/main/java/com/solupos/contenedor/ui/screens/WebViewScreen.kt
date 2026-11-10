@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.Sell
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FloatingActionButton
@@ -29,6 +30,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -44,7 +46,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.solupos.contenedor.data.preferences.UserPreferences
 import com.solupos.contenedor.data.repository.StoreRepository
+import com.solupos.contenedor.pricecheck.CodeInterpreter
+import com.solupos.contenedor.pricecheck.CodeQuery
+import com.solupos.contenedor.pricecheck.GuatemalaZone
+import com.solupos.contenedor.pricecheck.LookupResult
+import com.solupos.contenedor.pricecheck.PriceLookupService
 import com.solupos.contenedor.printer.BluetoothPrinterManager
+import com.solupos.contenedor.ui.pricecheck.PriceResultSheet
+import java.time.LocalDate
 import com.solupos.contenedor.ui.components.PrintPreviewDialog
 import com.solupos.contenedor.ui.components.TutorialOverlay
 import com.solupos.contenedor.ui.components.TutorialStep
@@ -62,6 +71,7 @@ fun WebViewScreen(
     repository: StoreRepository,
     userPreferences: UserPreferences,
     printerManager: BluetoothPrinterManager,
+    priceLookup: PriceLookupService,
     onBack: () -> Unit,
     onOpenPrinterSettings: () -> Unit
 ) {
@@ -71,6 +81,9 @@ fun WebViewScreen(
     var url by remember { mutableStateOf<String?>(null) }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     var showScanner by remember { mutableStateOf(false) }
+    // El mismo escáner sirve para el POS (inyecta el código) y para consultar un precio.
+    var scannerForPrice by remember { mutableStateOf(false) }
+    var priceResult by remember { mutableStateOf<Pair<String, LookupResult>?>(null) }
     var printPreview by remember { mutableStateOf<Pair<Bitmap, UserPreferences.PrinterConfig>?>(null) }
     var sslPrompt by remember { mutableStateOf<Pair<SslErrorHandler, SslError>?>(null) }
     // El teclado tapa/eleva los botones flotantes; lo detectamos para ocultar el
@@ -81,8 +94,11 @@ fun WebViewScreen(
     var showTutorial by remember { mutableStateOf(false) }
     var scannerBounds by remember { mutableStateOf<Rect?>(null) }
     var storeBtnBounds by remember { mutableStateOf<Rect?>(null) }
+    var priceBtnBounds by remember { mutableStateOf<Rect?>(null) }
+    var showPriceTip by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         if (!userPreferences.hasSeenWebViewTutorial.first()) showTutorial = true
+        if (!userPreferences.hasSeenPriceTipPos.first()) showPriceTip = true
     }
 
     LaunchedEffect(storeId) {
@@ -313,6 +329,27 @@ fun WebViewScreen(
             }
 
             if (!showScanner) {
+                if (com.solupos.contenedor.Features.priceCheck) SmallFloatingActionButton(
+                    onClick = {
+                        webViewRef?.let { wv ->
+                            val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                            imm.hideSoftInputFromWindow(wv.windowToken, 0)
+                            wv.clearFocus()
+                        }
+                        scannerForPrice = true
+                        showScanner = true
+                    },
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    contentColor = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .imePadding()
+                        .padding(bottom = 88.dp, end = 24.dp)
+                        .onGloballyPositioned { priceBtnBounds = it.boundsInRoot() }
+                ) {
+                    Icon(Icons.Default.Sell, contentDescription = "Consultar precio")
+                }
+
                 FloatingActionButton(
                     onClick = {
                         webViewRef?.let { wv ->
@@ -320,6 +357,7 @@ fun WebViewScreen(
                             imm.hideSoftInputFromWindow(wv.windowToken, 0)
                             wv.clearFocus()
                         }
+                        scannerForPrice = false
                         showScanner = true
                     },
                     modifier = Modifier
@@ -340,12 +378,36 @@ fun WebViewScreen(
                 ) {
                     ScannerScreen(
                         onBarcodeScanned = { barcode ->
-                            webViewRef?.evaluateJavascript(BarcodeInjector.buildScript(barcode), null)
                             showScanner = false
+                            if (scannerForPrice) {
+                                scannerForPrice = false
+                                coroutineScope.launch {
+                                    val query = CodeInterpreter.interpret(barcode)
+                                    val result = if (query is CodeQuery.Unrecognized) LookupResult.Unrecognized
+                                    else priceLookup.lookup(storeId, query)
+                                    priceResult = barcode to result
+                                }
+                            } else {
+                                webViewRef?.evaluateJavascript(BarcodeInjector.buildScript(barcode), null)
+                            }
                         },
-                        onCancel = { showScanner = false }
+                        onCancel = { showScanner = false; scannerForPrice = false }
                     )
                 }
+            }
+
+            priceResult?.let { (code, result) ->
+                PriceResultSheet(
+                    result = result,
+                    scannedCode = code,
+                    today = LocalDate.now(GuatemalaZone),
+                    onClose = { priceResult = null },
+                    onScanAnother = {
+                        priceResult = null
+                        scannerForPrice = true
+                        showScanner = true
+                    }
+                )
             }
 
             printPreview?.let { (bitmap, config) ->
@@ -398,23 +460,44 @@ fun WebViewScreen(
         }
     }
 
-        if (showTutorial && scannerBounds != null && storeBtnBounds != null) {
-            TutorialOverlay(
-                steps = listOf(
+        val posSteps = buildList {
+            val priceStep = priceBtnBounds?.takeIf { showPriceTip && com.solupos.contenedor.Features.priceCheck }?.let {
+                TutorialStep(
+                    targetBounds = it,
+                    title = "Consulta precios sin salir de la venta",
+                    description = "Escanea un producto para ver su precio, su oferta y si hay existencia. No modifica el carrito."
+                )
+            }
+            if (showTutorial && scannerBounds != null && storeBtnBounds != null) {
+                add(
                     TutorialStep(
                         targetBounds = scannerBounds!!,
                         title = "Escanea productos",
                         description = "Toca este botón para escanear códigos de barras o QR con la cámara y agregarlos a la venta."
-                    ),
+                    )
+                )
+                priceStep?.let { add(it) }
+                add(
                     TutorialStep(
                         targetBounds = storeBtnBounds!!,
                         title = "Volver a tus tiendas",
                         description = "Toca este botón para regresar a la lista de tiendas en cualquier momento."
                     )
-                ),
+                )
+            } else if (!showTutorial) {
+                priceStep?.let { add(it) }
+            }
+        }
+        if (posSteps.isNotEmpty()) {
+            TutorialOverlay(
+                steps = posSteps,
                 onFinish = {
                     showTutorial = false
-                    coroutineScope.launch { userPreferences.markWebViewTutorialSeen() }
+                    showPriceTip = false
+                    coroutineScope.launch {
+                        userPreferences.markWebViewTutorialSeen()
+                        userPreferences.markPriceTipPosSeen()
+                    }
                 }
             )
         }

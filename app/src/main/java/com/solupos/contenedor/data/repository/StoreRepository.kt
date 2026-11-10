@@ -13,6 +13,9 @@ class StoreRepository(
     val lastStoreId: Flow<String?> = prefs.lastStoreId
 
     suspend fun getById(id: String): StoreEntity? = dao.getById(id)
+    suspend fun getKioskStore(): StoreEntity? = dao.getKioskStore()
+    /** Un equipo solo puede ser quiosco de una tienda. */
+    suspend fun clearKioskExcept(id: String) = dao.clearKioskExcept(id)
     suspend fun insert(store: StoreEntity) = dao.insert(store)
     suspend fun update(store: StoreEntity) = dao.update(store)
     suspend fun delete(store: StoreEntity) = dao.delete(store)

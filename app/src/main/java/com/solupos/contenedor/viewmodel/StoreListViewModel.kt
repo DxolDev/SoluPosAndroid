@@ -25,21 +25,33 @@ class StoreListViewModel(
     private val _showTutorial = MutableStateFlow(false)
     val showTutorial: StateFlow<Boolean> = _showTutorial.asStateFlow()
 
+    private val _showPriceTip = MutableStateFlow(false)
+    val showPriceTip: StateFlow<Boolean> = _showPriceTip.asStateFlow()
+
     init {
         viewModelScope.launch {
             if (!userPreferences.hasSeenTutorial.first()) {
                 _showTutorial.value = true
+            }
+            if (!userPreferences.hasSeenPriceTipList.first()) {
+                _showPriceTip.value = true
             }
         }
     }
 
     fun dismissTutorial() {
         _showTutorial.value = false
-        viewModelScope.launch { userPreferences.markTutorialSeen() }
+        _showPriceTip.value = false
+        viewModelScope.launch {
+            userPreferences.markTutorialSeen()
+            userPreferences.markPriceTipListSeen()
+        }
     }
 
     fun replayTutorial() {
         _showTutorial.value = true
+        _showPriceTip.value = true
+        viewModelScope.launch { userPreferences.resetPriceTipList() }
         // También reactiva el tutorial del POS para que reaparezca al abrir una tienda.
         viewModelScope.launch { userPreferences.resetWebViewTutorial() }
     }

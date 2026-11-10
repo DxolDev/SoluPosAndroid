@@ -20,6 +20,9 @@ class UserPreferences(private val context: Context) {
     private val paperWidthMmKey = intPreferencesKey("paper_width_mm")
     private val hasSeenTutorialKey = booleanPreferencesKey("has_seen_tutorial")
     private val hasSeenWebViewTutorialKey = booleanPreferencesKey("has_seen_webview_tutorial")
+    // Avisos del consultador de precios: se muestran una vez, también a quien ya vio el tutorial original.
+    private val hasSeenPriceTipListKey = booleanPreferencesKey("has_seen_price_tip_list")
+    private val hasSeenPriceTipPosKey = booleanPreferencesKey("has_seen_price_tip_pos")
 
     val lastStoreId: Flow<String?> = context.dataStore.data.map { it[lastStoreIdKey] }
 
@@ -58,8 +61,18 @@ class UserPreferences(private val context: Context) {
     }
 
     suspend fun resetWebViewTutorial() {
-        context.dataStore.edit { it[hasSeenWebViewTutorialKey] = false }
+        context.dataStore.edit {
+            it[hasSeenWebViewTutorialKey] = false
+            it[hasSeenPriceTipPosKey] = false
+        }
     }
+
+    val hasSeenPriceTipList: Flow<Boolean> = context.dataStore.data.map { it[hasSeenPriceTipListKey] ?: false }
+    val hasSeenPriceTipPos: Flow<Boolean> = context.dataStore.data.map { it[hasSeenPriceTipPosKey] ?: false }
+
+    suspend fun markPriceTipListSeen() { context.dataStore.edit { it[hasSeenPriceTipListKey] = true } }
+    suspend fun markPriceTipPosSeen() { context.dataStore.edit { it[hasSeenPriceTipPosKey] = true } }
+    suspend fun resetPriceTipList() { context.dataStore.edit { it[hasSeenPriceTipListKey] = false } }
 
     suspend fun clearPrinterConfig() {
         context.dataStore.edit {

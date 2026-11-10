@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Sell
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -23,7 +24,10 @@ fun StoreCard(
     store: StoreEntity,
     onClick: () -> Unit,
     onEdit: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onPriceCheck: () -> Unit,
+    priceCheckEnabled: Boolean,
+    priceCheckButtonModifier: Modifier = Modifier
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
 
@@ -33,6 +37,7 @@ fun StoreCard(
             .clickable(onClick = onClick),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
+      Column {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -85,5 +90,15 @@ fun StoreCard(
                 }
             }
         }
+        if (com.solupos.contenedor.Features.priceCheck) TextButton(
+            onClick = onPriceCheck,
+            enabled = priceCheckEnabled,
+            modifier = priceCheckButtonModifier.padding(start = 8.dp, bottom = 4.dp)
+        ) {
+            Icon(Icons.Default.Sell, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(if (priceCheckEnabled) "Consultador de precios" else "Consultador: sin token")
+        }
+      }
     }
 }

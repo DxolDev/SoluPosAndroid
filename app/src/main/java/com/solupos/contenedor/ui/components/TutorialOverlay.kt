@@ -62,19 +62,34 @@ fun TutorialOverlay(
                 .graphicsLayer(alpha = 0.99f, compositingStrategy = CompositingStrategy.Offscreen)
         ) {
             drawRect(color = Color.Black.copy(alpha = 0.78f))
-            val radius = (max(step.targetBounds.width, step.targetBounds.height) / 2f) +
-                with(density) { 20.dp.toPx() }
-            drawCircle(
-                color = Color.Transparent,
-                radius = radius,
-                center = step.targetBounds.center,
-                blendMode = BlendMode.Clear
-            )
+            val b = step.targetBounds
+            if (b.width > b.height * 2f) {
+                // Botón ancho (p. ej. el de una tarjeta): un círculo taparía media pantalla.
+                val pad = with(density) { 8.dp.toPx() }
+                val corner = with(density) { 24.dp.toPx() }
+                drawRoundRect(
+                    color = Color.Transparent,
+                    topLeft = androidx.compose.ui.geometry.Offset(b.left - pad, b.top - pad),
+                    size = androidx.compose.ui.geometry.Size(b.width + 2 * pad, b.height + 2 * pad),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(corner, corner),
+                    blendMode = BlendMode.Clear
+                )
+            } else {
+                val radius = (max(b.width, b.height) / 2f) + with(density) { 20.dp.toPx() }
+                drawCircle(
+                    color = Color.Transparent,
+                    radius = radius,
+                    center = b.center,
+                    blendMode = BlendMode.Clear
+                )
+            }
         }
 
         Card(
             modifier = Modifier
                 .align(if (isLowerHalf) Alignment.TopCenter else Alignment.BottomCenter)
+                .statusBarsPadding()
+                .navigationBarsPadding()
                 .padding(24.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {

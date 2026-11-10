@@ -4,7 +4,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.Add
@@ -37,13 +37,17 @@ fun StoreListScreen(
     onAddStore: () -> Unit,
     onEditStore: (String) -> Unit,
     onOpenStore: (String) -> Unit,
+    onOpenPriceCheck: (String) -> Unit,
+    hasToken: (String) -> Boolean,
     onOpenPrinterSettings: () -> Unit
 ) {
     val stores by viewModel.stores.collectAsState()
     val showTutorial by viewModel.showTutorial.collectAsState()
+    val showPriceTip by viewModel.showPriceTip.collectAsState()
     var storeToDelete by remember { mutableStateOf<StoreEntity?>(null) }
     var printerIconBounds by remember { mutableStateOf<Rect?>(null) }
     var addFabBounds by remember { mutableStateOf<Rect?>(null) }
+    var priceBtnBounds by remember { mutableStateOf<Rect?>(null) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
@@ -118,7 +122,7 @@ fun StoreListScreen(
                         contentPadding = PaddingValues(16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        items(stores, key = { it.id }) { store ->
+                        itemsIndexed(stores, key = { _, s -> s.id }) { index, store ->
                             StoreCard(
                                 store = store,
                                 onClick = {
@@ -126,7 +130,14 @@ fun StoreListScreen(
                                     onOpenStore(store.id)
                                 },
                                 onEdit = { onEditStore(store.id) },
-                                onDelete = { storeToDelete = store }
+                                onDelete = { storeToDelete = store },
+                                onPriceCheck = { onOpenPriceCheck(store.id) },
+                                // En desarrollo se habilita siempre para ver el catálogo de demostración.
+                                priceCheckEnabled = com.solupos.contenedor.BuildConfig.DEBUG ||
+                                    remember(store.id) { hasToken(store.id) },
+                                priceCheckButtonModifier = if (index == 0) {
+                                    Modifier.onGloballyPositioned { priceBtnBounds = it.boundsInRoot() }
+                                } else Modifier
                             )
                         }
                     }
@@ -152,22 +163,38 @@ fun StoreListScreen(
 
         val printerBounds = printerIconBounds
         val fabBounds = addFabBounds
-        if (showTutorial && printerBounds != null && fabBounds != null) {
-            TutorialOverlay(
-                steps = listOf(
+        val priceBounds = priceBtnBounds
+        val tutorialSteps = buildList {
+            if (showTutorial && printerBounds != null && fabBounds != null) {
+                add(
                     TutorialStep(
                         targetBounds = printerBounds,
                         title = "Configura tu impresora",
                         description = "Aquí puedes vincular tu impresora térmica Bluetooth para imprimir tickets de venta."
-                    ),
+                    )
+                )
+                add(
                     TutorialStep(
                         targetBounds = fabBounds,
                         title = "Agrega tu primera tienda",
                         description = "Toca este botón para conectar tu punto de venta y empezar a vender."
                     )
-                ),
-                onFinish = { viewModel.dismissTutorial() }
-            )
+                )
+            }
+            // Novedad: se muestra una vez, incluso a quien ya vio el tutorial original.
+            if (com.solupos.contenedor.Features.priceCheck && showPriceTip && priceBounds != null && stores.isNotEmpty()) {
+                add(
+                    TutorialStep(
+                        targetBounds = priceBounds,
+                        title = "Nuevo: consultador de precios",
+                        description = "Escanea un producto con la cámara y mira su precio al instante. " +
+                            "En Editar tienda puedes activar el modo quiosco para dejar un equipo fijo en el pasillo."
+                    )
+                )
+            }
+        }
+        if (tutorialSteps.isNotEmpty()) {
+            TutorialOverlay(steps = tutorialSteps, onFinish = { viewModel.dismissTutorial() })
         }
     }
 }
